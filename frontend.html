@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YOLO API Demo</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #000;
+            color: #39ff14;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+        .left, .right {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 32px;
+            box-sizing: border-box;
+            background: #111;
+            color: #39ff14;
+        }
+        .left {
+            background: #111;
+            border-right: 2px solid #39ff14;
+        }
+        .drop-area {
+            border: 2px dashed #39ff14;
+            border-radius: 12px;
+            width: 100%;
+            max-width: 400px;
+            height: 300px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #39ff14;
+            font-size: 1.2em;
+            background: #222;
+            transition: border-color 0.2s, color 0.2s;
+            cursor: pointer;
+        }
+        .drop-area.dragover {
+            border-color: #fff;
+            color: #fff;
+            background: #333;
+        }
+        .right {
+            background: #111;
+        }
+        .result-img {
+            max-width: 100%;
+            max-height: 350px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(57,255,20,0.15);
+            margin-bottom: 24px;
+            border: 2px solid #39ff14;
+        }
+        .results {
+            width: 100%;
+            max-width: 400px;
+            background: #222;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(57,255,20,0.10);
+            padding: 20px;
+            color: #39ff14;
+            border: 1px solid #39ff14;
+        }
+        .results h3 {
+            margin-top: 0;
+            color: #39ff14;
+        }
+        .class-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .class-list li {
+            padding: 4px 0;
+            border-bottom: 1px solid #39ff14;
+        }
+        .class-list li:last-child {
+            border-bottom: none;
+        }
+        .loading {
+            color: #39ff14;
+            font-weight: bold;
+            margin-top: 16px;
+        }
+        table {
+            color: #39ff14;
+            background: #111;
+        }
+        td, th {
+            border: 1px solid #39ff14 !important;
+        }
+        @media (max-width: 900px) {
+            .container {
+                flex-direction: column;
+            }
+            .left, .right {
+                border-right: none;
+                border-bottom: 2px solid #39ff14;
+                min-height: 50vh;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="left">
+            <div id="drop-area" class="drop-area">
+                Drag & Drop Image Here<br>or Click to Select
+            </div>
+            <input type="file" id="fileElem" accept="image/*" style="display:none">
+            <div id="loading" class="loading" style="display:none">Processing...</div>
+        </div>
+        <div class="right">
+            <img id="result-img" class="result-img" style="display:none" />
+            <div id="save-buttons" style="display:none; margin-bottom: 16px;">
+                <button id="save-image-btn" style="margin-right: 10px;">Save Image</button>
+                <button id="save-data-btn">Save Data</button>
+            </div>
+            <div id="results" class="results" style="display:none">
+                <h3>Classifications</h3>
+                <ul id="class-list" class="class-list"></ul>
+                <h3>Class Counts</h3>
+                <ul id="class-counts" class="class-list"></ul>
+            </div>
+            <div id="json-table-panel" class="results" style="display:none; margin-top: 20px;"></div>
+        </div>
+    </div>
+    <!-- New section for summary table at the bottom -->
+    <div id="summary-table-section" class="results" style="max-width: 600px; margin: 32px auto 0 auto; display: none;">
+        <h3>Summary</h3>
+        <table id="summary-table" style="width:100%;border-collapse:collapse;">
+            <thead>
+                <tr>
+                    <th style="border:1px solid #39ff14;padding:4px 8px;">Class</th>
+                    <th style="border:1px solid #39ff14;padding:4px 8px;">Count</th>
+                </tr>
+            </thead>
+            <tbody id="summary-class-counts"></tbody>
+            <tfoot>
+                <tr>
+                    <td style="border:1px solid #39ff14;padding:4px 8px;"><strong>Processing Time</strong></td>
+                    <td id="summary-processing-time" style="border:1px solid #39ff14;padding:4px 8px;"></td>
+                </tr>
+                <tr>
+                    <td style="border:1px solid #39ff14;padding:4px 8px;"><strong>Timestamp</strong></td>
+                    <td id="summary-timestamp" style="border:1px solid #39ff14;padding:4px 8px;"></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+    <script>
+        const dropArea = document.getElementById('drop-area');
+        const fileElem = document.getElementById('fileElem');
+        const loading = document.getElementById('loading');
+        const resultImg = document.getElementById('result-img');
+        const resultsDiv = document.getElementById('results');
+        const classList = document.getElementById('class-list');
+        const classCounts = document.getElementById('class-counts');
+        // New summary table elements
+        const summaryTableSection = document.getElementById('summary-table-section');
+        const summaryClassCounts = document.getElementById('summary-class-counts');
+        const summaryProcessingTime = document.getElementById('summary-processing-time');
+        const summaryTimestamp = document.getElementById('summary-timestamp');
+
+        // Drag and drop events
+        dropArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropArea.classList.add('dragover');
+        });
+        dropArea.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            dropArea.classList.remove('dragover');
+        });
+        dropArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropArea.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files && files[0]) {
+                handleFile(files[0]);
+            }
+        });
+        dropArea.addEventListener('click', () => fileElem.click());
+        fileElem.addEventListener('change', (e) => {
+            if (fileElem.files && fileElem.files[0]) {
+                handleFile(fileElem.files[0]);
+            }
+        });
+
+        function handleFile(file) {
+            if (!file.type.startsWith('image/')) {
+                alert('Please select an image file.');
+                return;
+            }
+            loading.style.display = 'block';
+            resultImg.style.display = 'none';
+            resultsDiv.style.display = 'none';
+
+            // Read the input image to get its dimensions
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    // Set the result image's width and height to match the input image
+                    resultImg.style.width = img.width + 'px';
+                    resultImg.style.height = img.height + 'px';
+                    // Set the results panel width to match the image width
+                    resultsDiv.style.width = img.width + 'px';
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+
+            // Prepare form data
+            const formData = new FormData();
+            formData.append('image', file);
+            // Send to API
+            fetch('https://test1-951651231392.us-central1.run.app/api/predict', {
+                method: 'POST',
+                body: formData
+            })
+            .then(async response => {
+                if (!response.ok) {
+                    throw new Error('API error: ' + response.status);
+                }
+                return response.json();
+            })
+            .then(data => {
+                // Use response: { annotated_image: <base64>, class_counts: {...} }
+                if (data.annotated_image) {
+                    resultImg.src = 'data:image/jpeg;base64,' + data.annotated_image;
+                    resultImg.style.display = 'block';
+                    document.getElementById('save-buttons').style.display = 'block';
+                } else {
+                    resultImg.style.display = 'none';
+                    document.getElementById('save-buttons').style.display = 'none';
+                }
+
+                // Display class counts
+                let classCountsHtml = '<h3>Class Counts</h3>';
+                if (data.class_counts && Object.keys(data.class_counts).length > 0) {
+                    classCountsHtml += '<ul>';
+                    for (const [cls, count] of Object.entries(data.class_counts)) {
+                        classCountsHtml += `<li><strong>${cls}</strong>: ${count}</li>`;
+                    }
+                    classCountsHtml += '</ul>';
+                } else {
+                    classCountsHtml += '<p>No classes detected.</p>';
+                }
+
+                // Display processing time
+                let processingTimeHtml = '';
+                if (typeof data.processing_time !== 'undefined') {
+                    processingTimeHtml = `<p><strong>Processing time:</strong> ${data.processing_time.toFixed(2)} seconds</p>`;
+                }
+
+                // Display success and timestamp
+                let metaHtml = '';
+                if (typeof data.success !== 'undefined') {
+                    metaHtml += `<p><strong>Success:</strong> ${data.success ? 'Yes' : 'No'}</p>`;
+                }
+                if (data.timestamp) {
+                    metaHtml += `<p><strong>Timestamp:</strong> ${data.timestamp}</p>`;
+                }
+
+                resultInfo.innerHTML = classCountsHtml + processingTimeHtml + metaHtml;
+                resultsDiv.style.display = 'block';
+
+                // Display the rest of the JSON response in a table (excluding annotated_image)
+                let tableHtml = '<h3>Raw API Response</h3><table style="width:100%;border-collapse:collapse;margin-top:10px;">';
+                for (const [key, value] of Object.entries(data)) {
+                    if (key === 'annotated_image') continue;
+                    let displayValue = value;
+                    if (typeof value === 'object') {
+                        displayValue = '<pre style="margin:0;">' + JSON.stringify(value, null, 2) + '</pre>';
+                    }
+                    tableHtml += `<tr><td style="border:1px solid #eee;padding:4px 8px;"><strong>${key}</strong></td><td style="border:1px solid #eee;padding:4px 8px;">${displayValue}</td></tr>`;
+                }
+                tableHtml += '</table>';
+                const jsonTablePanel = document.getElementById('json-table-panel');
+                jsonTablePanel.innerHTML = tableHtml;
+                jsonTablePanel.style.display = 'block';
+
+                // --- Populate the summary table at the bottom ---
+                // Class counts
+                summaryClassCounts.innerHTML = '';
+                if (data.class_counts && Object.keys(data.class_counts).length > 0) {
+                    for (const [cls, count] of Object.entries(data.class_counts)) {
+                        summaryClassCounts.innerHTML += `<tr><td style="border:1px solid #39ff14;padding:4px 8px;">${cls}</td><td style="border:1px solid #39ff14;padding:4px 8px;">${count}</td></tr>`;
+                    }
+                } else {
+                    summaryClassCounts.innerHTML = '<tr><td colspan="2" style="border:1px solid #39ff14;padding:4px 8px;">No classes detected.</td></tr>';
+                }
+                // Processing time
+                if (typeof data.processing_time !== 'undefined') {
+                    summaryProcessingTime.textContent = data.processing_time.toFixed(2) + ' seconds';
+                } else {
+                    summaryProcessingTime.textContent = 'N/A';
+                }
+                // Timestamp
+                if (data.timestamp) {
+                    summaryTimestamp.textContent = data.timestamp;
+                } else {
+                    summaryTimestamp.textContent = 'N/A';
+                }
+                summaryTableSection.style.display = 'block';
+                console.log('Summary table should now be visible.');
+
+                // Store the latest response for saving
+                window.latestApiResponse = data;
+            })
+            .catch(err => {
+                alert('Error: ' + err.message);
+            })
+            .finally(() => {
+                loading.style.display = 'none';
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            // Save Image button functionality
+            document.getElementById('save-image-btn').addEventListener('click', function() {
+                const data = window.latestApiResponse;
+                if (!data || !data.annotated_image) return;
+                const link = document.createElement('a');
+                link.href = 'data:image/jpeg;base64,' + data.annotated_image;
+                link.download = 'result.jpg';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            });
+
+            // Save Data button functionality
+            document.getElementById('save-data-btn').addEventListener('click', function() {
+                const data = window.latestApiResponse;
+                if (!data) return;
+                // Exclude the annotated_image from the saved data
+                const dataToSave = Object.assign({}, data);
+                delete dataToSave.annotated_image;
+                const blob = new Blob([JSON.stringify(dataToSave, null, 2)], {type: 'text/plain'});
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = 'result.txt';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            });
+        });
+    </script>
+</body>
+</html> 
